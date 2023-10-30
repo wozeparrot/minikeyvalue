@@ -10,8 +10,8 @@ import (
 // ensure the path hashing function doesn't change
 func Test_key2path(t *testing.T) {
 	tests := map[string]string{
-		"hello":      "/5d/41/aGVsbG8=",
-		"helloworld": "/fc/5e/aGVsbG93b3JsZA==",
+		"hello":      "/5d/41/2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+		"helloworld": "/fc/5e/936a185caaa266bb9cbe981e9e05cb78cd732b0b3280eb944412bb6f8f8f07af",
 	}
 	for k, v := range tests {
 		ret := key2path([]byte(k))

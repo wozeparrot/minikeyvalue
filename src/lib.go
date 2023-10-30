@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
-	"encoding/base64"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sort"
 	"strings"
@@ -64,11 +64,12 @@ func fromRecord(rec Record) []byte {
 
 func key2path(key []byte) string {
 	mkey := md5.Sum(key)
-	b64key := base64.StdEncoding.EncodeToString(key)
+	skey := sha256.Sum256(key)
+	skeyhex := hex.EncodeToString(skey[:])
 
 	// 2 byte layers deep, meaning a fanout of 256
 	// optimized for 2^24 = 16M files per volume server
-	return fmt.Sprintf("/%02x/%02x/%s", mkey[0], mkey[1], b64key)
+	return fmt.Sprintf("/%02x/%02x/%s", mkey[0], mkey[1], skeyhex)
 }
 
 type sortvol struct {
@@ -174,7 +175,7 @@ func remote_get(remote string) (string, error) {
 	if resp.StatusCode != 200 {
 		return "", errors.New(fmt.Sprintf("remote_get: wrong status code %d", resp.StatusCode))
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
