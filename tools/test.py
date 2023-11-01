@@ -7,9 +7,7 @@ import unittest
 import requests
 from urllib.parse import quote_plus
 import time
-import timeit
 import logging
-from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(format='%(name)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -17,7 +15,7 @@ logger.setLevel(logging.DEBUG)
 
 class TestMiniKeyValue(unittest.TestCase):
   maxDiff = None
-  
+
   def get_fresh_key(self):
     return b"http://localhost:3000/swag-" + binascii.hexlify(os.urandom(10))
 
@@ -205,8 +203,8 @@ if __name__ == '__main__':
         break
       except (ConnectionRefusedError, OSError):
         time.sleep(0.5)
+        print("waiting for servers")
         continue
-      print("waiting for servers")
-  
+
   unittest.main()
 
