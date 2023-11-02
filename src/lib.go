@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
-	"crypto/sha256"
-	"encoding/hex"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
@@ -64,12 +63,11 @@ func fromRecord(rec Record) []byte {
 
 func key2path(key []byte) string {
 	mkey := md5.Sum(key)
-	skey := sha256.Sum256(key)
-	skeyhex := hex.EncodeToString(skey[:])
+	skey := sha1.Sum(key)
 
 	// 2 byte layers deep, meaning a fanout of 256
 	// optimized for 2^24 = 16M files per volume server
-	return fmt.Sprintf("/%02x/%02x/%s", mkey[0], mkey[1], skeyhex)
+	return fmt.Sprintf("/%02x/%02x/%x", mkey[0], mkey[1], skey)
 }
 
 type sortvol struct {
