@@ -76,7 +76,7 @@ func (a *App) QueryHandler(key []byte, w http.ResponseWriter, r *http.Request) {
 				(rec.deleted != SOFT && operation == "unlinked") {
 				continue
 			}
-			if len(keys) > 1000000 { // too large (need to specify limit)
+			if len(keys) > 2147483646 { // too large (need to specify limit)
 				w.WriteHeader(413)
 				return
 			}
@@ -194,8 +194,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// lock the key while a PUT or DELETE is in progress
-	if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "UNLINK" || r.Method == "REBALANCE" {
+	// lock the key while an operation that needs the key locked is in progress
+	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE" || r.Method == "UNLINK" || r.Method == "REBALANCE" {
 		if !a.LockKey(lkey) {
 			// Conflict, retry later
 			w.WriteHeader(409)
@@ -324,19 +324,21 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("<CompleteMultipartUploadResult></CompleteMultipartUploadResult>"))
 			return
 		}
-	case "PUT":
+	case "PUT", "PATCH":
 		// no empty values
 		if r.ContentLength == 0 {
 			w.WriteHeader(411)
 			return
 		}
 
-		// check if we already have the key, and it's not deleted
-		rec := a.GetRecord(key)
-		if rec.deleted == NO {
-			// Forbidden to overwrite with PUT
-			w.WriteHeader(403)
-			return
+		// check if we already have the key, and it's not deleted (unless this is a PATCH)
+		if r.Method == "PUT" {
+			rec := a.GetRecord(key)
+			if rec.deleted == NO {
+				// Forbidden to overwrite with PUT
+				w.WriteHeader(403)
+				return
+			}
 		}
 
 		if pn := r.URL.Query().Get("partNumber"); pn != "" {
