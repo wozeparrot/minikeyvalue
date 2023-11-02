@@ -16,7 +16,6 @@ error_log /dev/stderr;
 pid $VOLUME/nginx.pid;
 
 events {
-  #use epoll;
   multi_accept on;
   accept_mutex off;
   worker_connections 4096;
@@ -24,7 +23,7 @@ events {
 
 http {
   sendfile on;
-  sendfile_max_chunk 1024k;
+  sendfile_max_chunk 1M;
 
   tcp_nopush on;
   tcp_nodelay on;
@@ -44,11 +43,9 @@ http {
       root $VOLUME;
       disable_symlinks off;
 
-      client_body_temp_path $VOLUME/body_temp;
-      client_max_body_size 0;
-
-      # this causes tests to fail
-      #client_body_buffer_size 0;
+      # we don't expect any large files
+      client_max_body_size 16M;
+      client_body_buffer_size 16M;
 
       dav_methods PUT DELETE;
       dav_access group:rw all:r;
