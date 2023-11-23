@@ -1,7 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ALTDB=/tmp/indexdbalt/
 ALTDB2=/tmp/indexdbalt2/
 echo "rebuild and rebalance test"
+
+rm -r "$ALTDB" "$ALTDB2"
 
 # take down main server (now leaves nginx running)
 kill $(pgrep -f "indexdb")
