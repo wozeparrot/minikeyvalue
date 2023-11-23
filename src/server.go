@@ -9,11 +9,9 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
@@ -25,27 +23,6 @@ type ListResponse struct {
 }
 
 func (a *App) QueryHandler(key []byte, w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("list-type") == "2" {
-		// this is an S3 style query
-		// TODO: this is very incomplete
-		key = []byte(string(key) + "/" + r.URL.Query().Get("prefix"))
-		iter := a.db.NewIterator(util.BytesPrefix(key), nil)
-		defer iter.Release()
-
-		ret := "<ListBucketResult>"
-		for iter.Next() {
-			rec := toRecord(iter.Value())
-			if rec.deleted != NO {
-				continue
-			}
-			ret += "<Contents><Key>" + string(iter.Key()[len(key):]) + "</Key></Contents>"
-		}
-		ret += "</ListBucketResult>"
-		w.WriteHeader(200)
-		w.Write([]byte(ret))
-		return
-	}
-
 	// operation is first query parameter (e.g. ?list&limit=10)
 	operation := strings.Split(r.URL.RawQuery, "&")[0]
 	switch operation {
@@ -197,7 +174,6 @@ func (a *App) WriteToReplicas(key []byte, value io.Reader, valuelen int64) int {
 
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key := []byte(r.URL.Path)
-	lkey := []byte(r.URL.Path + r.URL.Query().Get("partNumber"))
 
 	log.Println(r.Method, r.URL, r.ContentLength, r.Header["Range"])
 
@@ -208,13 +184,13 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// lock the key while an operation that needs the key locked is in progress
-	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE" || r.Method == "UNLINK" || r.Method == "REBALANCE" {
-		if !a.LockKey(lkey) {
+	if r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE" || r.Method == "UNLINK" || r.Method == "REBALANCE" {
+		if !a.LockKey(key) {
 			// Conflict, retry later
 			w.WriteHeader(409)
 			return
 		}
-		defer a.UnlockKey(lkey)
+		defer a.UnlockKey(key)
 	}
 
 	switch r.Method {
@@ -264,79 +240,6 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", remote)
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(302)
-	case "POST":
-		// check if we already have the key, and it's not deleted
-		rec := a.GetRecord(key)
-		if rec.deleted == NO {
-			// Forbidden to overwrite with POST
-			w.WriteHeader(403)
-			return
-		}
-
-		// this will handle multipart uploads in "S3"
-		if r.URL.RawQuery == "uploads" {
-			uploadid := uuid.New().String()
-			a.uploadids[uploadid] = true
-
-			// init multipart upload
-			w.WriteHeader(200)
-			w.Write([]byte(`<InitiateMultipartUploadResult>
-        <UploadId>` + uploadid + `</UploadId>
-      </InitiateMultipartUploadResult>`))
-		} else if r.URL.RawQuery == "delete" {
-			del, err := parseDelete(r.Body)
-			if err != nil {
-				log.Println(err)
-				w.WriteHeader(500)
-				return
-			}
-
-			for _, subkey := range del.Keys {
-				fullkey := fmt.Sprintf("%s/%s", key, subkey)
-				status := a.Delete([]byte(fullkey), false)
-				if status != 204 {
-					w.WriteHeader(status)
-					return
-				}
-			}
-			w.WriteHeader(204)
-		} else if uploadid := r.URL.Query().Get("uploadId"); uploadid != "" {
-			if a.uploadids[uploadid] != true {
-				w.WriteHeader(403)
-				return
-			}
-			delete(a.uploadids, uploadid)
-
-			// finish multipart upload
-			cmu, err := parseCompleteMultipartUpload(r.Body)
-			if err != nil {
-				log.Println(err)
-				w.WriteHeader(500)
-				return
-			}
-
-			// open all the part files
-			var fs []io.Reader
-			sz := int64(0)
-			for _, part := range cmu.PartNumbers {
-				fn := fmt.Sprintf("/tmp/%s-%d", uploadid, part)
-				f, err := os.Open(fn)
-				os.Remove(fn)
-				if err != nil {
-					w.WriteHeader(403)
-					return
-				}
-				defer f.Close()
-				fi, _ := f.Stat()
-				sz += fi.Size()
-				fs = append(fs, f)
-			}
-
-			status := a.WriteToReplicas(key, io.MultiReader(fs...), sz)
-			w.WriteHeader(status)
-			w.Write([]byte("<CompleteMultipartUploadResult></CompleteMultipartUploadResult>"))
-			return
-		}
 	case "PUT", "PATCH":
 		// no empty values
 		if r.ContentLength == 0 {
@@ -354,26 +257,8 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if pn := r.URL.Query().Get("partNumber"); pn != "" {
-			uploadid := r.URL.Query().Get("uploadId")
-			if a.uploadids[uploadid] != true {
-				w.WriteHeader(403)
-				return
-			}
-
-			pnnum, _ := strconv.Atoi(pn)
-			f, err := os.OpenFile(fmt.Sprintf("/tmp/%s-%d", uploadid, pnnum), os.O_RDWR|os.O_CREATE, 0600)
-			if err != nil {
-				w.WriteHeader(403)
-				return
-			}
-			defer f.Close()
-			io.Copy(f, r.Body)
-			w.WriteHeader(200)
-		} else {
-			status := a.WriteToReplicas(key, r.Body, r.ContentLength)
-			w.WriteHeader(status)
-		}
+		status := a.WriteToReplicas(key, r.Body, r.ContentLength)
+		w.WriteHeader(status)
 	case "DELETE", "UNLINK":
 		status := a.Delete(key, r.Method == "UNLINK")
 		w.WriteHeader(status)
