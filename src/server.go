@@ -105,7 +105,7 @@ func (a *App) Delete(key []byte, unlink bool) int {
 				// but i'm not really sure what else to do?
 				delete_error = true
 			}
-			if remote_delete(fmt.Sprintf("%s.key", remote)) != nil {
+			if remote_delete(remote+".key") != nil {
 				delete_error = true
 			}
 		}

@@ -80,7 +80,7 @@ func rebalance(a *App, req RebalanceRequest) bool {
 				rebalance_error = true
 			}
 			// write key
-			if err := remote_put(fmt.Sprintf("%s.key", remote_to), int64(len(req.key)), bytes.NewReader(req.key)); err != nil {
+			if err := remote_put(remote_to+".key", int64(len(req.key)), bytes.NewReader(req.key)); err != nil {
 				fmt.Println("rebalance put error", err, remote_to)
 				rebalance_error = true
 			}
@@ -112,7 +112,7 @@ func rebalance(a *App, req RebalanceRequest) bool {
 				fmt.Println("rebalance delete error", err, remote_del)
 				delete_error = true
 			}
-			if err := remote_delete(fmt.Sprintf("%s.key", remote_del)); err != nil {
+			if err := remote_delete(remote_del+".key"); err != nil {
 				fmt.Println("rebalance delete error", err, remote_del)
 				delete_error = true
 			}
