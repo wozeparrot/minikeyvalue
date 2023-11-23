@@ -49,7 +49,7 @@ func (a *App) QueryHandler(key []byte, w http.ResponseWriter, r *http.Request) {
 	// operation is first query parameter (e.g. ?list&limit=10)
 	operation := strings.Split(r.URL.RawQuery, "&")[0]
 	switch operation {
-	case "list", "unlinked":
+	case "list", "writing", "unlinked":
 		start := r.URL.Query().Get("start")
 		limit := 0
 		qlimit := r.URL.Query().Get("limit")
@@ -73,6 +73,7 @@ func (a *App) QueryHandler(key []byte, w http.ResponseWriter, r *http.Request) {
 		for iter.Next() {
 			rec := toRecord(iter.Value())
 			if (rec.deleted != NO && operation == "list") ||
+				(rec.deleted != INIT && operation == "writing") ||
 				(rec.deleted != SOFT && operation == "unlinked") {
 				continue
 			}
@@ -127,6 +128,9 @@ func (a *App) Delete(key []byte, unlink bool) int {
 				// but i'm not really sure what else to do?
 				delete_error = true
 			}
+			if remote_delete(fmt.Sprintf("%s.key", remote)) != nil {
+				delete_error = true
+			}
 		}
 
 		if delete_error {
@@ -145,8 +149,8 @@ func (a *App) WriteToReplicas(key []byte, value io.Reader, valuelen int64) int {
 	// we don't have the key, compute the remote URL
 	kvolumes := key2volume(key, a.volumes, a.replicas, a.subvolumes)
 
-	// push to leveldb initially as deleted, and without a hash since we don't have it yet
-	if !a.PutRecord(key, Record{kvolumes, SOFT, ""}) {
+	// push to leveldb as initializing, and without a hash since we don't have it yet
+	if !a.PutRecord(key, Record{kvolumes, INIT, ""}) {
 		return 500
 	}
 
@@ -162,6 +166,15 @@ func (a *App) WriteToReplicas(key []byte, value io.Reader, valuelen int64) int {
 		if remote_put(remote, valuelen, body) != nil {
 			// we assume the remote wrote nothing if it failed
 			fmt.Printf("replica %d write failed: %s\n", i, remote)
+			// try not to leave key in the initializing state
+			a.PutRecord(key, Record{kvolumes, SOFT, ""})
+			return 500
+		}
+		// write the key to the remotes as well
+		if remote_put(remote+".key", int64(len(key)), bytes.NewReader(key)) != nil {
+			fmt.Printf("replica %d write key failed: %s\n", i, remote+".key")
+			// try not to leave key in the initializing state
+			a.PutRecord(key, Record{kvolumes, SOFT, ""})
 			return 500
 		}
 	}
@@ -212,7 +225,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// note that the hash is always of the whole file, not the content requested
 			w.Header().Set("Content-Md5", rec.hash)
 		}
-		if rec.deleted == SOFT || rec.deleted == HARD {
+		if rec.deleted != NO {
 			if a.fallback == "" {
 				w.Header().Set("Content-Length", "0")
 				w.WriteHeader(404)
