@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -34,12 +33,14 @@ func get_files(url string) []File {
 	return files
 }
 
-func rebuild(a *App, vol string, name string) bool {
-	key, err := base64.StdEncoding.DecodeString(name)
+func rebuild(a *App, vol string, url string, name string) bool {
+	key_url := fmt.Sprintf("%s%s.key", url, name)
+	skey, err := remote_get(key_url)
 	if err != nil {
-		fmt.Println("base64 decode error", err)
+		fmt.Println("key fetch failed", err, key_url)
 		return false
 	}
+	key := []byte(skey)
 
 	kvolumes := key2volume(key, a.volumes, a.replicas, a.subvolumes)
 
@@ -121,7 +122,9 @@ func (a *App) Rebuild() {
 			for req := range reqs {
 				files := get_files(req.url)
 				for _, f := range files {
-					rebuild(a, req.vol, f.Name)
+					if !strings.HasSuffix(f.Name, ".key") {
+						rebuild(a, req.vol, req.url, f.Name)
+					}
 				}
 				wg.Done()
 			}

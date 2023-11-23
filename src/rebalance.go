@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"sync"
@@ -78,6 +79,11 @@ func rebalance(a *App, req RebalanceRequest) bool {
 				fmt.Println("rebalance put error", err, remote_to)
 				rebalance_error = true
 			}
+			// write key
+			if err := remote_put(fmt.Sprintf("%s.key", remote_to), int64(len(req.key)), bytes.NewReader(req.key)); err != nil {
+				fmt.Println("rebalance put error", err, remote_to)
+				rebalance_error = true
+			}
 		}
 	}
 	if rebalance_error {
@@ -103,6 +109,10 @@ func rebalance(a *App, req RebalanceRequest) bool {
 		if needs_delete {
 			remote_del := fmt.Sprintf("http://%s%s", v2, kp)
 			if err := remote_delete(remote_del); err != nil {
+				fmt.Println("rebalance delete error", err, remote_del)
+				delete_error = true
+			}
+			if err := remote_delete(fmt.Sprintf("%s.key", remote_del)); err != nil {
 				fmt.Println("rebalance delete error", err, remote_del)
 				delete_error = true
 			}
