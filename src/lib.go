@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
-	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/zeebo/blake3"
 )
 
 // *** DB Type ***
@@ -21,6 +22,7 @@ const (
 	NO   Deleted = 0
 	SOFT Deleted = 1
 	HARD Deleted = 2
+	INIT Deleted = 3
 )
 
 type Record struct {
@@ -33,7 +35,10 @@ func toRecord(data []byte) Record {
 	var rec Record
 	ss := string(data)
 	rec.deleted = NO
-	if strings.HasPrefix(ss, "DELETED") {
+	if strings.HasPrefix(ss, "INIT") {
+		rec.deleted = INIT
+		ss = ss[4:]
+	} else if strings.HasPrefix(ss, "DELETED") {
 		rec.deleted = SOFT
 		ss = ss[7:]
 	}
@@ -50,7 +55,9 @@ func fromRecord(rec Record) []byte {
 	if rec.deleted == HARD {
 		panic("Can't put HARD delete in the database")
 	}
-	if rec.deleted == SOFT {
+	if rec.deleted == INIT {
+		cc = "INIT"
+	} else if rec.deleted == SOFT {
 		cc = "DELETED"
 	}
 	if len(rec.hash) == 32 {
@@ -62,12 +69,11 @@ func fromRecord(rec Record) []byte {
 // *** Hash Functions ***
 
 func key2path(key []byte) string {
-	mkey := md5.Sum(key)
-	skey := sha1.Sum(key)
+	bkey := blake3.Sum512(key)
 
 	// 2 byte layers deep, meaning a fanout of 256
 	// optimized for 2^24 = 16M files per volume server
-	return fmt.Sprintf("/%02x/%02x/%x", mkey[0], mkey[1], skey)
+	return fmt.Sprintf("/%02x/%02x/%x", bkey[0], bkey[1], bkey[2:])
 }
 
 type sortvol struct {

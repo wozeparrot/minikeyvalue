@@ -10,8 +10,8 @@ import (
 // ensure the path hashing function doesn't change
 func Test_key2path(t *testing.T) {
 	tests := map[string]string{
-		"hello":      "/5d/41/2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
-		"helloworld": "/fc/5e/936a185caaa266bb9cbe981e9e05cb78cd732b0b3280eb944412bb6f8f8f07af",
+		"hello":      "/ea/8f/163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200fe992405f0d785b599a2e3387f6d34d01faccfeb22fb697ef3fd53541241a338c",
+		"helloworld": "/7b/b2/05244d808356318ec65d0ae54f32ee3a7bab5dfaf431b01e567e03baab4ff6a8d6a553be367544fab052b736c463c09fc2b8ff829d2d86b812443bb7f9b0",
 	}
 	for k, v := range tests {
 		ret := key2path([]byte(k))
@@ -41,11 +41,11 @@ func Test_key2volume(t *testing.T) {
 func fromToRecordExample(t *testing.T, rec Record, val string) {
 	recs := fromRecord(rec)
 	if val != string(recs) {
-		t.Fatal("record string didn't match")
+		t.Fatal("record string didn't match", val, string(recs))
 	}
 	reca := toRecord(recs)
 	if !reflect.DeepEqual(rec, reca) {
-		t.Fatal("toRecord(fromRecord(rec)) failed")
+		t.Fatal("toRecord(fromRecord(rec)) failed", rec, reca)
 	}
 	fmt.Println(val)
 }
@@ -57,4 +57,6 @@ func Test_fromToRecord(t *testing.T) {
 	fromToRecordExample(t, Record{[]string{"hello"}, SOFT, ""}, "DELETEDhello")
 	fromToRecordExample(t, Record{[]string{"hello"}, SOFT, "5d41402abc4b2a76b9719d911017c592"}, "DELETEDHASH5d41402abc4b2a76b9719d911017c592hello")
 	fromToRecordExample(t, Record{[]string{"hello"}, NO, "5d41402abc4b2a76b9719d911017c592"}, "HASH5d41402abc4b2a76b9719d911017c592hello")
+	fromToRecordExample(t, Record{[]string{"hello"}, INIT, ""}, "INIThello")
+	fromToRecordExample(t, Record{[]string{"hello"}, INIT, "5d41402abc4b2a76b9719d911017c592"}, "INITHASH5d41402abc4b2a76b9719d911017c592hello")
 }
