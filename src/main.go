@@ -3,9 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
@@ -65,7 +64,6 @@ func (a *App) PutRecord(key []byte, rec Record) bool {
 
 func main() {
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = 100
-	rand.Seed(time.Now().Unix())
 
 	port := flag.Int("port", 3000, "Port for the server to listen on")
 	pdb := flag.String("db", "", "Path to leveldb")
@@ -89,7 +87,7 @@ func main() {
 	}
 
 	if !*verbose {
-		log.SetOutput(ioutil.Discard)
+		log.SetOutput(io.Discard)
 	} else {
 		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	}
