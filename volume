@@ -12,7 +12,7 @@ daemon off;
 worker_processes auto;
 pcre_jit on;
 
-error_log /dev/stderr;
+error_log /dev/stderr warn;
 pid $VOLUME/nginx.pid;
 
 events {
@@ -23,7 +23,6 @@ events {
 
 http {
   sendfile on;
-  sendfile_max_chunk 1M;
 
   tcp_nopush on;
   tcp_nodelay on;
@@ -39,13 +38,15 @@ http {
 
   server {
     listen $PORT default_server backlog=4096;
+
+    # we don't expect any large files
+    client_max_body_size 16m;
+    client_body_buffer_size 16m;
+    client_body_temp_path $VOLUME/tmp;
+
     location / {
       root $VOLUME;
-      disable_symlinks off;
-
-      # we don't expect any large files
-      client_max_body_size 16M;
-      client_body_buffer_size 16M;
+      disable_symlinks on;
 
       dav_methods PUT DELETE;
       dav_access group:rw all:r;
