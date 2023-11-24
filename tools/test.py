@@ -74,6 +74,18 @@ class TestMiniKeyValue(unittest.TestCase):
     r = requests.put(key, data="onyou")
     self.assertEqual(r.status_code, 201)
 
+  def test_patchworks(self):
+    key = self.get_fresh_key()
+    r = requests.put(key, data="onyou")
+    self.assertEqual(r.status_code, 201)
+
+    r = requests.patch(key, data="on")
+    self.assertEqual(r.status_code, 201)
+
+    r = requests.get(key)
+    self.assertEqual(r.status_code, 200)
+    self.assertEqual(r.text, "on")
+
   def test_10keys(self):
     keys = [self.get_fresh_key() for i in range(10)]
 
