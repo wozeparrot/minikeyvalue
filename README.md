@@ -70,8 +70,6 @@ Usage: ./mkv <server, rebuild, rebalance>
 
   -db string
         Path to leveldb
-  -fallback string
-        Fallback server for missing keys
   -port int
         Port for the server to listen on (default 3000)
   -protect

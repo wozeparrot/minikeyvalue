@@ -243,13 +243,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Md5", rec.hash)
 		}
 		if rec.deleted != NO {
-			if a.fallback == "" {
-				w.Header().Set("Content-Length", "0")
-				w.WriteHeader(404)
-				return
-			}
-			// fall through to fallback
-			remote = fmt.Sprintf("http://%s%s", a.fallback, key)
+            w.Header().Set("Content-Length", "0")
+            w.WriteHeader(404)
+            return
 		} else {
 			kvolumes := key2volume(key, a.volumes, a.replicas, a.subvolumes)
 			if needs_rebalance(rec.rvolumes, kvolumes) {
