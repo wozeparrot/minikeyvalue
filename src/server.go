@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
@@ -97,22 +98,42 @@ func (a *App) Delete(key []byte, unlink bool) int {
 
 	if !unlink {
 		// then remotely, if this is not an unlink
-		delete_error := false
-		for _, volume := range rec.rvolumes {
-			remote := fmt.Sprintf("http://%s%s", volume, key2path(key))
-			if remote_delete(remote) != nil {
-				// if this fails, it's possible to get an orphan file
-				// but i'm not really sure what else to do?
-				delete_error = true
-			}
-			if remote_delete(remote+".key") != nil {
-				delete_error = true
-			}
-		}
+        var wg sync.WaitGroup
+        errs := make(chan error, len(rec.rvolumes)*2)
+        path := key2path(key)
+		for i, volume := range rec.rvolumes {
+            wg.Add(1)
+            go func(volume string, i int) {
+                defer wg.Done()
+                remote := fmt.Sprintf("http://%s%s", volume, path)
+                if err := remote_delete(remote); err != nil {
+                    // if this fails, it's possible to get an orphan file
+                    // but i'm not really sure what else to do?
+                    fmt.Printf("replica %d delete failed: %s\n", i, remote)
+                    errs <- err
+                }
+            }(volume, i)
 
-		if delete_error {
-			return 500
 		}
+        // delete the key from the remotes as well
+        for i, volume := range rec.rvolumes {
+            wg.Add(1)
+            go func(volume string, i int) {
+                defer wg.Done()
+                remote := fmt.Sprintf("http://%s%s.key", volume, path)
+                if err := remote_delete(remote); err != nil {
+                    fmt.Printf("replica %d delete key failed: %s\n", i, remote)
+                    errs <- err
+                }
+            }(volume, i)
+        }
+        wg.Wait()
+        close(errs)
+        for err := range errs {
+            if err != nil {
+                return 500
+            }
+        }
 
 		// this is a hard delete in the database, aka nothing
 		a.db.Delete(key, nil)
@@ -132,24 +153,44 @@ func (a *App) WriteToReplicas(key []byte, value io.Reader, valuelen int64) int {
 	}
 
 	// write to each replica
-	var buf bytes.Buffer
-	body := io.TeeReader(value, &buf)
-	for i := 0; i < len(kvolumes); i++ {
-		if i != 0 {
-			// if we have already read the contents into the TeeReader
-			body = bytes.NewReader(buf.Bytes())
-		}
-		remote := fmt.Sprintf("http://%s%s", kvolumes[i], key2path(key))
-		if remote_put(remote, valuelen, body) != nil {
-			// we assume the remote wrote nothing if it failed
-			fmt.Printf("replica %d write failed: %s\n", i, remote)
-			// try not to leave key in the initializing state
-			a.PutRecord(key, Record{kvolumes, SOFT, ""})
-			return 500
-		}
-		// write the key to the remotes as well
-		if remote_put(remote+".key", int64(len(key)), bytes.NewReader(key)) != nil {
-			fmt.Printf("replica %d write key failed: %s\n", i, remote+".key")
+	// because we know that the contents are going to be small, we can just read it all into memory
+	// and then write it to each replica concurrently
+	body, err := io.ReadAll(value)
+	if err != nil {
+		fmt.Println("error reading body", err)
+		return 500
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, len(kvolumes)*2)
+    path := key2path(key)
+	for i, volume := range kvolumes {
+		wg.Add(1)
+		go func(volume string, i int, body []byte) {
+			defer wg.Done()
+			remote := fmt.Sprintf("http://%s%s", volume, path)
+			if err := remote_put(remote, valuelen, bytes.NewReader(body)); err != nil {
+				fmt.Printf("replica %d write failed: %s\n", i, remote)
+				errs <- err
+			}
+		}(volume, i, body)
+	}
+	// write the key to the remotes as well
+	for i, volume := range kvolumes {
+		wg.Add(1)
+		go func(volume string, i int) {
+			defer wg.Done()
+			remote := fmt.Sprintf("http://%s%s.key", volume, path)
+			if err := remote_put(remote, int64(len(key)), bytes.NewReader(key)); err != nil {
+				fmt.Printf("replica %d write key failed: %s\n", i, remote)
+				errs <- err
+			}
+		}(volume, i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
 			// try not to leave key in the initializing state
 			a.PutRecord(key, Record{kvolumes, SOFT, ""})
 			return 500
@@ -159,7 +200,7 @@ func (a *App) WriteToReplicas(key []byte, value io.Reader, valuelen int64) int {
 	var hash = ""
 	if a.md5sum {
 		// compute the hash of the value
-		hash = fmt.Sprintf("%x", md5.Sum(buf.Bytes()))
+		hash = fmt.Sprintf("%x", md5.Sum(body))
 	}
 
 	// push to leveldb as existing
