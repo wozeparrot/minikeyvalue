@@ -98,42 +98,42 @@ func (a *App) Delete(key []byte, unlink bool) int {
 
 	if !unlink {
 		// then remotely, if this is not an unlink
-        var wg sync.WaitGroup
-        errs := make(chan error, len(rec.rvolumes)*2)
-        path := key2path(key)
+		var wg sync.WaitGroup
+		errs := make(chan error, len(rec.rvolumes)*2)
+		path := key2path(key)
 		for i, volume := range rec.rvolumes {
-            wg.Add(1)
-            go func(volume string, i int) {
-                defer wg.Done()
-                remote := fmt.Sprintf("http://%s%s", volume, path)
-                if err := remote_delete(remote); err != nil {
-                    // if this fails, it's possible to get an orphan file
-                    // but i'm not really sure what else to do?
-                    fmt.Printf("replica %d delete failed: %s\n", i, remote)
-                    errs <- err
-                }
-            }(volume, i)
+			wg.Add(1)
+			go func(volume string, i int) {
+				defer wg.Done()
+				remote := fmt.Sprintf("http://%s%s", volume, path)
+				if err := remote_delete(remote); err != nil {
+					// if this fails, it's possible to get an orphan file
+					// but i'm not really sure what else to do?
+					fmt.Printf("replica %d delete failed: %s\n", i, remote)
+					errs <- err
+				}
+			}(volume, i)
 
 		}
-        // delete the key from the remotes as well
-        for i, volume := range rec.rvolumes {
-            wg.Add(1)
-            go func(volume string, i int) {
-                defer wg.Done()
-                remote := fmt.Sprintf("http://%s%s.key", volume, path)
-                if err := remote_delete(remote); err != nil {
-                    fmt.Printf("replica %d delete key failed: %s\n", i, remote)
-                    errs <- err
-                }
-            }(volume, i)
-        }
-        wg.Wait()
-        close(errs)
-        for err := range errs {
-            if err != nil {
-                return 500
-            }
-        }
+		// delete the key from the remotes as well
+		for i, volume := range rec.rvolumes {
+			wg.Add(1)
+			go func(volume string, i int) {
+				defer wg.Done()
+				remote := fmt.Sprintf("http://%s%s.key", volume, path)
+				if err := remote_delete(remote); err != nil {
+					fmt.Printf("replica %d delete key failed: %s\n", i, remote)
+					errs <- err
+				}
+			}(volume, i)
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				return 500
+			}
+		}
 
 		// this is a hard delete in the database, aka nothing
 		a.db.Delete(key, nil)
@@ -163,17 +163,17 @@ func (a *App) WriteToReplicas(key []byte, value io.Reader, valuelen int64) int {
 
 	var wg sync.WaitGroup
 	errs := make(chan error, len(kvolumes)*2)
-    path := key2path(key)
+	path := key2path(key)
 	for i, volume := range kvolumes {
 		wg.Add(1)
-		go func(volume string, i int, body []byte) {
+		go func(volume string, i int, body io.Reader) {
 			defer wg.Done()
 			remote := fmt.Sprintf("http://%s%s", volume, path)
-			if err := remote_put(remote, valuelen, bytes.NewReader(body)); err != nil {
+			if err := remote_put(remote, valuelen, body); err != nil {
 				fmt.Printf("replica %d write failed: %s\n", i, remote)
 				errs <- err
 			}
-		}(volume, i, body)
+		}(volume, i, bytes.NewReader(body))
 	}
 	// write the key to the remotes as well
 	for i, volume := range kvolumes {
